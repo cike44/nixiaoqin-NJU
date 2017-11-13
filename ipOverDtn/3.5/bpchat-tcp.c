@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <bp.h>
-
+#include <arpa/inet.h> 
 static BpSAP                sap;
 static Sdr                  sdr;
 static pthread_mutex_t      sdrmutex = PTHREAD_MUTEX_INITIALIZER;
@@ -16,6 +16,11 @@ static char                 *destEid = NULL;
 static char                 *ownEid = NULL;
 static BpCustodySwitch      custodySwitch = NoCustodyRequested;
 static int                  running = 1;
+
+int sockfd=0;
+int fd = 0;
+socklen_t addr_len =sizeof(struct sockaddr_in);
+struct sockaddr_in servaddr,clieaddr;
 
 const char usage[] =
 "Usage: bpchat.c <source EID> <dest EID> [ct]\n\n"
@@ -29,17 +34,24 @@ static void *       sendLines(void *args)
 	Object          bundleZco, bundlePayload;
 	Object          newBundle;   /* We never use but bp_send requires it. */
 	int             lineLength = 0;
-	char            lineBuffer[1024];
+	char            lineBuffer[5000];
 
 	while(running) {
-		/* Read a line from stdin */
-		if(fgets(lineBuffer, sizeof(lineBuffer), stdin) == NULL) {
-			fprintf(stderr, "EOF\n");
-			running = 0;
-			bp_interrupt(sap);
+		/* Read from socket */
+		bzero(lineBuffer,sizeof(lineBuffer));
+		int n =recvfrom(sockfd, lineBuffer, sizeof(lineBuffer), 0 , (struct sockaddr *)&clieaddr ,&addr_len);
+		if(n <= 0) {
+			printf("End\n");
+			//running = 0;
+			//bp_interrupt(sap);
 			break;
 		}
-
+		printf("length = %d, data-send:\n", n);
+		int i = 0;
+		for(i = 0; i < n; ++i) {
+			printf("%02x", lineBuffer[i]);
+		}
+		printf("\n");
 		lineLength = strlen(lineBuffer);
 
 		/* Wrap the linebuffer in a bundle payload. */
@@ -81,6 +93,8 @@ static void *       sendLines(void *args)
 			break;
 		}
 	}
+	pthread_cancel(sendLinesThread);
+	close(sockfd);
 	return NULL;
 }
 
@@ -89,7 +103,7 @@ static void *       recvBundles(void *args)
 {
 	BpDelivery      dlv;
 	ZcoReader       reader;
-	char            buffer[1024];
+	char            buffer[5000];
 	int             bundleLenRemaining;
 	int             rc;
 	int             bytesToRead;
@@ -130,8 +144,15 @@ static void *       recvBundles(void *args)
 					buffer);
 			if(rc < 0) break;
 			bundleLenRemaining -= rc;
-			printf("%.*s", rc, buffer);
-			fflush(stdout);
+			printf("length = %d, data-recv:\n", rc);
+			int i = 0;
+			for(i = 0; i < rc; ++i) {
+				printf("%02x", buffer[i]);
+			}
+			printf("\n");
+			//printf("%.*s", rc, buffer);
+			sendto(sockfd,buffer,rc,0,(struct sockaddr *)&clieaddr,addr_len);
+			//fflush(stdout);
 		}
 
 		if (sdr_end_xn(sdr) < 0)
@@ -182,22 +203,42 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, handleQuit);
 
-	/* Start receiver thread and sender thread. */
-	if(pthread_begin(&sendLinesThread, NULL, sendLines, NULL) < 0) {
-		putErrmsg("Can't make sendLines thread.", NULL);
-		bp_interrupt(sap);
+	/* Start tcp server */
+	fd=socket(AF_INET,SOCK_STREAM,0);
+	bzero(&servaddr,sizeof(servaddr));
+	servaddr.sin_family=AF_INET;
+	servaddr.sin_port=htons(9090);
+	//host ip address
+	inet_pton(AF_INET,"127.0.0.1",&servaddr.sin_addr);
+	if (bind(fd, (const struct sockaddr *)&servaddr, sizeof(servaddr))<0){
+		perror("connect");
 		exit(1);
 	}
+	listen(fd,5);
+	printf("TCP server start, listening\n");
+	while(1){
+		sockfd = accept(fd,(struct sockaddr*)&clieaddr,&addr_len);
+		printf("accpet ip:%s port:%d\n", inet_ntoa(clieaddr.sin_addr),ntohs(clieaddr.sin_port)); 
+		printf("1\n");
+		/* Start receiver thread and sender thread. */
+		if(pthread_begin(&sendLinesThread, NULL, sendLines, NULL) < 0) {
+			putErrmsg("Can't make sendLines thread.", NULL);
+			bp_interrupt(sap);
+			exit(1);
+		}
 
-	if(pthread_begin(&recvBundlesThread, NULL, recvBundles, NULL) < 0) {
-		putErrmsg("Can't make recvBundles thread.", NULL);
-		bp_interrupt(sap);
-		exit(1);
+		if(pthread_begin(&recvBundlesThread, NULL, recvBundles, NULL) < 0) {
+			putErrmsg("Can't make recvBundles thread.", NULL);
+			bp_interrupt(sap);
+			exit(1);
+		}
+		pthread_detach(sendLinesThread); 		
+		pthread_detach(recvBundlesThread); 
+		//pthread_join(sendLinesThread, NULL);
+		//pthread_join(recvBundlesThread, NULL);
 	}
-
-	pthread_join(sendLinesThread, NULL);
-	pthread_join(recvBundlesThread, NULL);
-
+	close(sockfd);
+	close(fd);
 	bp_close(sap);
 	bp_detach();
 	return 0;
