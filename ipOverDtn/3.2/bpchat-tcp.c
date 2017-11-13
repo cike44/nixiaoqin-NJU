@@ -18,6 +18,11 @@ static BpCustodySwitch      custodySwitch = NoCustodyRequested;
 static int                  running = 1;
 static int		    controlZco;
 
+int sockfd=0;
+int fd = 0;
+socklen_t addr_len =sizeof(struct sockaddr_in);
+struct sockaddr_in servaddr,clieaddr;
+
 const char usage[] =
 "Usage: bpchat.c <source EID> <dest EID> [ct]\n\n"
 "Reads lines from stdin and sends these lines in bundles.\n"
@@ -30,16 +35,24 @@ static void *       sendLines(void *args)
 	Object          bundleZco, bundlePayload;
 	Object          newBundle;   /* We never use but bp_send requires it. */
 	int             lineLength = 0;
-	char            lineBuffer[1024];
-
+	char            lineBuffer[5000];
 	while(running) {
-		/* Read a line from stdin */
-		if(fgets(lineBuffer, sizeof(lineBuffer), stdin) == NULL) {
-			fprintf(stderr, "EOF\n");
-			running = 0;
-			bp_interrupt(sap);
-			break;
+		/* Read from socket */
+		bzero(lineBuffer,sizeof(lineBuffer));
+		int n =recvfrom(sockfd, lineBuffer, sizeof(lineBuffer), 0 , (struct sockaddr *)&clieaddr ,&addr_len);
+		printf("length = %d, data-send:\n", n);
+		int i = 0;
+		for(i = 0; i < n; ++i) {
+			printf("%02x", lineBuffer[i]);
 		}
+		printf("\n");
+		/* Read a line from stdin */
+		// if(fgets(lineBuffer, sizeof(lineBuffer), stdin) == NULL) {
+		// 	fprintf(stderr, "EOF\n");
+		// 	running = 0;
+		// 	bp_interrupt(sap);
+		// 	break;
+		// }
 
 		lineLength = strlen(lineBuffer);
 
@@ -90,11 +103,10 @@ static void *       recvBundles(void *args)
 {
 	BpDelivery      dlv;
 	ZcoReader       reader;
-	char            buffer[1024];
+	char            buffer[5000];
 	int             bundleLenRemaining;
 	int             rc;
 	int             bytesToRead;
-
 	while(running) {
 		if(bp_receive(sap, &dlv, BP_BLOCKING) < 0)
 		{
@@ -121,8 +133,15 @@ static void *       recvBundles(void *args)
 			rc = zco_receive_source(sdr, &reader, bytesToRead, buffer);
 			if(rc < 0) break;
 			bundleLenRemaining -= rc;
-			printf("%.*s", rc, buffer);
-			fflush(stdout);
+			printf("length = %d, data-recv:\n", rc);
+			int i = 0;
+			for(i = 0; i < rc; ++i) {
+				printf("%02x", buffer[i]);
+			}
+			printf("\n");
+			//printf("%.*s", rc, buffer);
+			sendto(sockfd,buffer,rc,0,(struct sockaddr *)&clieaddr,addr_len);
+			//fflush(stdout);
 		}
 
 		if (sdr_end_xn(sdr) < 0)
@@ -173,6 +192,21 @@ int main(int argc, char **argv)
 	sdr = bp_get_sdr();
 
 	signal(SIGINT, handleQuit);
+
+	/* Start tcp server */
+	fd=socket(AF_INET,SOCK_STREAM,0);
+	bzero(&servaddr,sizeof(servaddr));
+	servaddr.sin_family=AF_INET;
+	servaddr.sin_port=htons(9090);
+	//host ip address
+	inet_pton(AF_INET,"192.168.10.103",&servaddr.sin_addr);
+	if (bind(fd, (const struct sockaddr *)&servaddr, sizeof(servaddr))<0){
+		perror("connect");
+		exit(1);
+	}
+	listen(fd,5);
+	sockfd = accept(fd,(struct sockaddr*)&clieaddr,&addr_len);
+	printf("accpet ip:%s \n", inet_ntoa(clieaddr.sin_addr)); 
 
 	/* Start receiver thread and sender thread. */
 	if(pthread_begin(&sendLinesThread, NULL, sendLines, NULL) < 0) {
