@@ -1,0 +1,197 @@
+Devices : {
+	EthernetDevice_Common : {
+		ignoredDevices = [ "lo" ]; 
+	};
+
+	ep1:
+	{
+		devType="Ethernet";
+		flagPromisc = true;
+		snapLen=1520;
+	};
+	UdpTrans :
+	{
+		devType="Udp4";
+		address="127.0.0.1";
+		port=5001;
+	};
+UdpReceive :
+	{
+		devType="Udp4";
+		address="127.0.0.1";
+		port=1111;
+	};
+UdpRecv :
+	{
+		devType="Udp4";
+		address="127.0.0.1";
+		port=5012;
+	};
+};
+
+Channels: {
+	chanTest: {
+
+		AOS_PhysicalChannel : 
+	    {
+	      frameSize = 256;
+	      useHeaderErrorControl = false;
+	      useFrameErrorControl = false;
+	      useInsertZone = false;
+	      insertZoneSize = 0;
+	      idlePattern = [ 170, 187, 204 ];
+	    };
+
+	
+ udpR1: {
+			dllName="modUdp4Receiver";
+			deviceName="UdpRecv";
+			receiveMax=true;
+			primaryOutput = [ "encapAdd1_1", "PrimaryInput" ]; 
+			immediateStart = true;
+		};
+
+
+		#AOS
+		encapAdd1_1 : 
+	    {
+	      dllName = "modEncapPkt_Add";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      supportIPE = true;
+	      lengthOfLength = 2;
+	      userDefinedField = 0;
+	      protocolIDExtension = 0;
+	      CCSDSDefinedField = 0;
+	      primaryOutput = [ "mpduAdd1_1", "PrimaryInput" ];
+	    };
+	    mpduAdd1_1 : 
+	    {
+	      dllName = "modAOS_M_PDU_Add";
+	      immediateStart = true;
+	      maxUsecsForNextPacket = 100;
+	      MRU = 0;
+	      MTU = 250;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      fillPattern = [ 224 ];
+	      multiPacketZone = true;
+	      primaryOutput = [ "vcGen1_1", "PrimaryInput" ];
+	    };
+	    vcGen1_1 : 
+	    {
+	      dllName = "modAOS_VC_Gen";
+	      immediateStart = true;
+	      SCID = 0xA1;
+	      VCID = 0x1;
+	      serviceType = "Packet";
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      useOperationalControl = false;
+	      useVCFrameCycle = false;
+	      primaryOutput = [ "vcMux1", "PrimaryInput" ];
+	    };
+	    vcMux1 : 
+	    {
+	      dllName = "modAOS_VC_Mux";
+	      immediateStart = true;
+	      SCID = 0xA1;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      defaultMuxPriority = 1000;
+	      #channelID_Priorities = ([0x1,900] );
+	      primaryOutput = [ "mcMux1", "PrimaryInput" ];
+	    };
+	    mcMux1 : 
+	    {
+	      dllName = "modAOS_MC_Mux";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      SCID = 0x100;
+	      defaultMuxPriority = 1000;
+	      #channelID_Priorities = ( );
+	      primaryOutput = [ "afGen1", "PrimaryInput" ];
+	    };
+	    afGen1 : 
+	    {
+	      dllName = "modAOS_AF_Gen";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      primaryOutput = [ "rsEncode1", "PrimaryInput" ];
+	    };
+	    rsEncode1 : 
+	    {
+	      dllName = "modRSEncode";
+	      immediateStart = true;
+	      maxErrorsPerCodeword = 8;
+	      interleavingDepth = 2;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      primaryOutput = [ "randomize1", "PrimaryInput" ];
+	    };
+	    randomize1 : 
+	    {
+	      dllName = "modPseudoRandomize";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      primaryOutput = [ "asmAdd1", "PrimaryInput" ];
+	    };
+	    asmAdd1 : 
+	    {
+	      dllName = "modASM_Add";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      markerPattern = [ 0x1A, 0xCF, 0xFC, 0x1D ];
+	      primaryOutput = [ "udpW2", "PrimaryInput" ];
+	    };
+
+	    udpW2: {
+			dllName="modUdp4Transmitter";
+			destAddress="127.0.0.1";
+			destPort=9090;
+			deviceName="UdpTrans";
+			receiveMax=true;
+			immediateStart=true;		
+		};
+
+
+	};	
+};
