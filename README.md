@@ -1,2 +1,2 @@
-# istin-NJU
-code of ISTIN of Nanjing University
+# nixiaoqin
+code of Ni Xiaoqin
