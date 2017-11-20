@@ -1,62 +1,205 @@
 Devices : {
-	EthernetDevice_Common : {
-		ignoredDevices = [ "lo" ]; 
-	};
 
-	eth1:
+	TcpTrans :
 	{
-		devType="Ethernet";
-		flagPromisc = true;
-		snapLen=1520;
-	};
-	UdpRecv :
-	{
-		devType="Udp4";
+		devType="Tcp4Client";
 		address="127.0.0.1";
-		port=5002;
+		port=9090;
 	};
-UdpTrans :
-	{
-		devType="Udp4";
-		address="192.168.10.100";
-		port=5001;
-	};
-UdpTrans2 :
+	UdpTrans2 :
 	{
 		devType="Udp4";
 		address="127.0.0.1";
 		port=5011;
 	};
+	UdpRecv :
+	{
+		devType="Udp4";
+		address="127.0.0.1";
+		port=5012;
+	};
+	UdpRecv2 :
+	{
+		devType="Udp4";
+		address="127.0.0.1";
+		port=5002;
+	};
 };
 
 Channels: {
-	chanTest: {
+	chanSend: {
 
 		AOS_PhysicalChannel : 
 	    {
-	      frameSize = 256;
+	      frameSize = 1019;
 	      useHeaderErrorControl = false;
-	      useFrameErrorControl = false;
+	      useFrameErrorControl = true;
 	      useInsertZone = false;
 	      insertZoneSize = 0;
 	      idlePattern = [ 170, 187, 204 ];
 	    };
 
-	   
-
-
-		udpR1: {
+	
+ 		udpR1: {
 			dllName="modUdp4Receiver";
 			deviceName="UdpRecv";
+			receiveMax=true;
+			primaryOutput = [ "encapAdd1_1", "PrimaryInput" ]; 
+			immediateStart = true;
+		};
+
+
+		#AOS
+		encapAdd1_1 : 
+	    {
+	      dllName = "modEncapPkt_Add";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      supportIPE = false;              
+              protocol =1;
+	      lengthOfLength = 2;
+	      userDefinedField = 0;
+	      protocolIDExtension = 0;	      
+	      CCSDSDefinedField = 0;
+	      primaryOutput = [ "mpduAdd1_1", "PrimaryInput" ];
+	    };
+	    mpduAdd1_1 : 
+	    {
+	      dllName = "modAOS_M_PDU_Add";
+	      immediateStart = true;
+	      maxUsecsForNextPacket = 100;
+	      MRU = 0;
+	      MTU = 1013;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      fillPattern = [ 0xaa ];
+	      multiPacketZone = false;
+	      primaryOutput = [ "vcGen1_1", "PrimaryInput" ];
+	    };
+	    vcGen1_1 : 
+	    {
+	      dllName = "modAOS_VC_Gen";
+	      immediateStart = true;
+	      SCID = 0xA1;
+	      VCID = 0x1;
+	      serviceType = "Packet";
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      useOperationalControl = false;
+	      useVCFrameCycle = false;
+	      primaryOutput = [ "vcMux1", "PrimaryInput" ];
+	    };
+	    vcMux1 : 
+	    {
+	      dllName = "modAOS_VC_Mux";
+	      immediateStart = true;
+	      SCID = 0xA1;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      defaultMuxPriority = 1000;
+	      #channelID_Priorities = ([0x1,900] );
+	      primaryOutput = [ "mcMux1", "PrimaryInput" ];
+	    };
+	    mcMux1 : 
+	    {
+	      dllName = "modAOS_MC_Mux";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      SCID = 0x100;
+	      defaultMuxPriority = 1000;
+	      #channelID_Priorities = ( );
+	      primaryOutput = [ "afGen1", "PrimaryInput" ];
+	    };
+	    afGen1 : 
+	    {
+	      dllName = "modAOS_AF_Gen";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      sendIntervalUsec = 0;
+	      dropBadFrames = true;
+	      primaryOutput = [ "randomize1", "PrimaryInput" ];
+	    };	 
+		randomize1 : 
+	    {
+	      dllName = "modPseudoRandomize";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      primaryOutput = [ "asmAdd1", "PrimaryInput" ];
+	    };
+
+	    asmAdd1 : 
+	    {
+	      dllName = "modASM_Add";
+	      immediateStart = true;
+	      MRU = 0;
+	      MTU = 0;
+	      lowWaterMark = 3145728;
+	      highWaterMark = 4194304;
+	      dumpToLog = false;
+	      markerPattern = [ 0x1A, 0xCF, 0xFC, 0x1D ];
+	      primaryOutput = [ "tcpW2", "PrimaryInput" ];
+	    };
+	
+
+	    tcpW2: {
+			dllName="modTcp4Transmitter";
+			deviceName="TcpTrans";
+			receiveMax=true;
+			immediateStart=true;		
+		};
+	};
+	chanReceive: {
+		AOS_PhysicalChannel : 
+	    {
+	      frameSize = 1019;
+	      useHeaderErrorControl = false;
+	      useFrameErrorControl = true;
+	      useInsertZone = false;
+	      insertZoneSize = 0;
+	      idlePattern = [ 170, 187, 204 ];
+	    };	
+
+		udpR: {
+			dllName="modUdp4Receiver";
+			deviceName="UdpRecv2";
 			receiveMax=true;
 			primaryOutput = [ "asmDel1", "PrimaryInput" ]; 
 			immediateStart = true;
 		};
-		asmDel1 : 
+	    asmDel1 : 
 	    {
 	      dllName = "modASM_Remove";
 	      immediateStart = true;
-	      expectedUnitLength = 288;
+	      expectedUnitLength = 1019;
 	      MRU = 0;
 	      MTU = 0;
 	      lowWaterMark = 3145728;
@@ -66,23 +209,10 @@ Channels: {
 	      allowedMarkerBitErrors = 0;
 	      primaryOutput = [ "unrandomize1", "PrimaryInput" ];
 	    };
-	    unrandomize1 : 
+ 		 unrandomize1 : 
 	    {
 	      dllName = "modPseudoRandomize";
 	      immediateStart = true;
-	      MRU = 0;
-	      MTU = 0;
-	      lowWaterMark = 3145728;
-	      highWaterMark = 4194304;
-	      dumpToLog = false;
-	      primaryOutput = [ "rsDecode1", "PrimaryInput" ];
-	    };
-	    rsDecode1 : 
-	    {
-	      dllName = "modRSDecode";
-	      immediateStart = true;
-	      maxErrorsPerCodeword = 8;
-	      interleavingDepth = 2;
 	      MRU = 0;
 	      MTU = 0;
 	      lowWaterMark = 3145728;
@@ -159,9 +289,9 @@ Channels: {
 	      lowWaterMark = 3145728;
 	      highWaterMark = 4194304;
 	      dumpToLog = false;
-	      supportIPE = true;
-	      multiPacketZone = true;
-	      allowPacketsAfterFill = true;
+	      supportIPE = false;
+	      multiPacketZone = false;
+	      allowPacketsAfterFill = false;
 	      primaryOutput = [ "encapDel1_2", "PrimaryInput" ];
 	    };
 	    encapDel1_2 : 
@@ -173,10 +303,12 @@ Channels: {
 	      lowWaterMark = 3145728;
 	      highWaterMark = 4194304;
 	      dumpToLog = false;
-	      supportIPE = true;
+	      supportIPE = false;
+		  protocol=1;
 	      primaryOutput = [ "udpW", "PrimaryInput" ];
+		  
 	    };
-udpW: {
+		udpW: {
 			dllName="modUdp4Transmitter";
 			destAddress="127.0.0.1";
 			destPort=5010;
@@ -184,32 +316,8 @@ udpW: {
 			receiveMax=true;
 			immediateStart=true;		
 		};
-	udpW2: {
-			dllName="modUdp4Transmitter";
-			destAddress="192.168.10.106";
-			destPort=5002;
-			deviceName="UdpTrans";
-			receiveMax=true;
-			immediateStart=true;		
-		};
+		
 
-		ethAdd1: { # segment name
-			dllName = "modEthFrame_Add";
-			primaryOutput = [ "ethWrite1", "PrimaryInput" ]; 
-			defaultPayloadType=2048;
-			dstMAC = "b8:ae:ed:23:3a:f0";
-			srcMAC = "b8:ae:ed:22:6c:a4";
-			MRU=5000;
-			immediateStart = true;
-		};
-
-		ethWrite1: { 
-			dllName = "modEthTransmitter"; 
-			deviceName = "eth1"; 
-			linkCheckFreq = "Once"; 
-			linkCheckMaxIterations = 100; 
-			linkCheckSleepMsec = 100; 
-			immediateStart = true;
-		};
-	};	
+	};
+    	
 };
