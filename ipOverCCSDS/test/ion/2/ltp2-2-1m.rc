@@ -1,0 +1,63 @@
+## begin ionadmin
+
+1 2 ''
+
+s
+
+a contact +1 +86400 1 2 125000
+a contact +1 +86400 2 1 125000
+a contact +1 +86400 1 1 125000
+a contact +1 +86400 2 2 125000
+a range +1 +86400 1 2 1
+a range +1 +86400 1 1 1
+a range +1 +86400 2 2 1
+
+m production 1000000
+m consumption 1000000
+m horizon +0
+## end ionadmin
+
+## begin ionsecadmin
+
+1
+e 1
+## end ionsecadmin
+
+## begin ltpadmin
+
+1 5 12236
+
+
+a span 1 5 12236 5 12236 1005 12236 1 'udplso 127.0.0.1:5012 1000000'
+
+s 'udplsi 127.0.0.1:5010'
+#m screening n
+#w 1
+## end ltpadmin
+
+## begin bpadmin
+
+1
+
+a scheme ipn 'ipnfw' 'ipnadminep'
+
+
+a endpoint ipn:2.1 x
+a endpoint ipn:2.2 x
+a endpoint ipn:2.64 x
+a endpoint ipn:2.65 x
+a protocol ltp 1005 100
+
+a induct ltp 2 ltpcli
+a outduct ltp 2 ltpclo
+a outduct ltp 1 ltpclo
+
+# Start the daemons
+s
+
+## end bpadmin
+
+## begin ipnadmin
+a plan 2 ltp/2
+a plan 1 ltp/1
+## end ipnadmin
