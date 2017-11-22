@@ -29,16 +29,39 @@ static void *       sendLines(void *args)
 	Object          bundleZco, bundlePayload;
 	Object          newBundle;   /* We never use but bp_send requires it. */
 	int             lineLength = 0;
-	char            lineBuffer[1024];
+	char            lineBuffer[5000];
 
+	int sockfd_recv=0;
+	struct sockaddr_in servaddr_recv;
+	sockfd_recv=socket(AF_INET,SOCK_DGRAM,0);
+	bzero(&servaddr_recv,sizeof(servaddr_recv));
+	servaddr_recv.sin_family=AF_INET;
+	servaddr_recv.sin_port=htons(7089);
+	//host ip address
+	inet_pton(AF_INET,"192.168.10.106",&servaddr_recv.sin_addr);
+	bind(sockfd_recv, (struct sockaddr *)&servaddr_recv, sizeof(servaddr_recv));
+	//servaddr_recv.sin_addr.s_addr=htonl(INADDR_ANY) ;
+	struct sockaddr_in addr;
+	socklen_t addr_len =sizeof(struct sockaddr_in);
 	while(running) {
-		/* Read a line from stdin */
-		if(fgets(lineBuffer, sizeof(lineBuffer), stdin) == NULL) {
-			fprintf(stderr, "EOF\n");
-			running = 0;
-			bp_interrupt(sap);
-			break;
+		/* Read from socket */
+		bzero(lineBuffer,sizeof(lineBuffer));
+		int n = recvfrom(sockfd_recv, lineBuffer, sizeof(lineBuffer), 0 , (struct sockaddr *)&addr ,&addr_len);
+
+		printf("length = %d, data-send:\n", n);
+		int i = 0;
+		for(i = 0; i < n; ++i) {
+			printf("%02x", lineBuffer[i]);
 		}
+		printf("\n");
+		//printf("%s\n", lineBuffer);
+		/* Read a line from stdin */
+		// if(fgets(lineBuffer, sizeof(lineBuffer), stdin) == NULL) {
+		// 	fprintf(stderr, "EOF\n");
+		// 	running = 0;
+		// 	bp_interrupt(sap);
+		// 	break;
+		// }
 
 		lineLength = strlen(lineBuffer);
 
@@ -89,11 +112,19 @@ static void *       recvBundles(void *args)
 {
 	BpDelivery      dlv;
 	ZcoReader       reader;
-	char            buffer[1024];
+	char            buffer[5000];
 	int             bundleLenRemaining;
 	int             rc;
 	int             bytesToRead;
-
+	int sockfd_send=0;
+	struct sockaddr_in servaddr_send;
+	sockfd_send=socket(AF_INET,SOCK_DGRAM,0);
+	bzero(&servaddr_send,sizeof(servaddr_send));
+	servaddr_send.sin_family=AF_INET;
+	servaddr_send.sin_port=htons(7089);
+	//zhukong ip address
+	inet_pton(AF_INET,"192.168.10.105",&servaddr_send.sin_addr);
+	socklen_t addr_len =sizeof(struct sockaddr_in);
 	while(running)
 	{
 		if(bp_receive(sap, &dlv, BP_BLOCKING) < 0)
@@ -130,8 +161,15 @@ static void *       recvBundles(void *args)
 					buffer);
 			if(rc < 0) break;
 			bundleLenRemaining -= rc;
-			printf("%.*s", rc, buffer);
-			fflush(stdout);
+			printf("length = %d, data-recv:\n", rc);
+			int i = 0;
+			for(i = 0; i < rc; ++i) {
+				printf("%02x", buffer[i]);
+			}
+			printf("\n");
+			//printf("%.*s", rc, buffer);
+			sendto(sockfd_send,buffer,rc,0,(struct sockaddr *)&servaddr_send,addr_len);
+			//fflush(stdout);
 		}
 
 		if (sdr_end_xn(sdr) < 0)
