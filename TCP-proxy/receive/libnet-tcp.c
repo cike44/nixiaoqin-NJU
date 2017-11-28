@@ -17,35 +17,79 @@ char * sock_ntop(const struct sockaddr* sa,socklen_t salen) {
 /*以太网头*/
 struct sniff_ethernet
 {
-	u_char ether_dhost[ETHER_ADDR_LEN];
-	u_char ether_shost[ETHER_ADDR_LEN];
-	u_short ether_type;
+        u_char ether_dhost[ETHER_ADDR_LEN];
+        u_char ether_shost[ETHER_ADDR_LEN];
+        u_short ether_type;
 };
 /*IP头*/
+int id_host = 0;
 struct sniff_ip
 {
-	u_char ip_vhl;
-	u_char ip_tos;
-	u_short ip_len;
-	u_short ip_id;
-	u_short ip_off;
-	#define IP_RF 0x8000
-	#define IP_DF 0x4000
-	#define IP_MF 0x2000
-	#define IP_OFFMASK 0x1fff
-	u_char ip_ttl;
-	u_char ip_p;
-	u_short ip_sum;
-	struct in_addr ip_src,ip_dst;
+        u_char ip_vhl;
+        u_char ip_tos;
+        u_short ip_len;
+        u_short ip_id;
+        u_short ip_off;
+        #define IP_RF 0x8000
+        #define IP_DF 0x4000
+        #define IP_MF 0x2000
+        #define IP_OFFMASK 0x1fff
+        u_char ip_ttl;
+         u_char ip_p;
+        u_short ip_sum;
+        struct in_addr ip_src,ip_dst;
 };
+/* TCP header */  
+typedef u_int tcp_seq;   
+tcp_seq host_seq = 0;
+struct sniff_tcp {  
+	u_short th_sport;               /* source port */  
+	u_short th_dport;               /* destination port */  
+	tcp_seq th_seq;                 /* sequence number */  
+	tcp_seq th_ack;                 /* acknowledgement number */      
+	u_char  th_offx2;               /* data offset, rsvd */  
+	#define TH_OFF(th)      (((th)->th_offx2 & 0xf0) >> 4)  
+	u_char  th_flags;  
+	#define TH_FIN  0x01  
+	#define TH_SYN  0x02  
+	#define TH_RST  0x04  
+	#define TH_PUSH 0x08  
+	#define TH_ACK  0x10  
+	#define TH_URG  0x20  
+	#define TH_ECE  0x40  
+	#define TH_CWR  0x80  
+	#define TH_FLAGS        (TH_FIN|TH_SYN|TH_RST|TH_ACK|TH_URG|TH_ECE|TH_CWR)  
+	u_short th_win;                 /* window */  
+	u_short th_sum;                 /* checksum */  
+	u_short th_urp;                 /* urgent pointer */  
+}; 
 /*UDP报头*/
 struct sniff_udp
 {
-	u_short udp_sport;
-	u_short udp_dport;
-	u_short udp_len;
-	u_short udp_sum;
+  u_short udp_sport;
+  u_short udp_dport;
+  u_short udp_len;
+  u_short udp_sum;
 };
+void convertStrToUnChar(char* str, unsigned char* UnChar)  
+{  
+    int i = strlen(str), j = 0, counter = 0;  
+    char c[2];  
+    unsigned int bytes[2];  
+  
+    for (j = 0; j < i; j += 2)   
+    {  
+        if(0 == j % 2)  
+        {  
+            c[0] = str[j];  
+            c[1] = str[j + 1];  
+            sscanf(c, "%02x" , &bytes[0]);  
+            UnChar[counter] = bytes[0];  
+            counter++;  
+        }  
+    }  
+    return;  
+} 
 int main(int argc, char *argv[])
 {
 	int sockfd2=0;
@@ -53,187 +97,186 @@ int main(int argc, char *argv[])
 	sockfd2=socket(AF_INET,SOCK_DGRAM,0);
 	bzero(&servaddr2,sizeof(servaddr2));
 	servaddr2.sin_family=AF_INET;
-	servaddr2.sin_port=htons(5010);
+	servaddr2.sin_port=htons(9090);
 	servaddr2.sin_addr.s_addr=htonl(INADDR_ANY) ;
 	bind(sockfd2, (struct sockaddr *)&servaddr2, sizeof(servaddr2));
-    int count =0;
+
 	char errBuf[100];
 	libnet_t *lib_net = NULL;
+	libnet_ptag_t lib_t0 = 0;
 	libnet_ptag_t lib_t1 = 0;
-    libnet_ptag_t lib_t2 = 0;
-    libnet_ptag_t lib_t3 = 0;
+	libnet_ptag_t lib_t2 = 0;
+	libnet_ptag_t lib_t3 = 0;
 
-	libnet_t *lib_net_1 = NULL;
-	libnet_ptag_t lib_t1_1 = 0;
-    libnet_ptag_t lib_t2_1 = 0;
-    libnet_ptag_t lib_t3_1 = 0;
-	//因为要把IP包封在以太帧中发出去 需要知道发送和接收网卡mac地址
-	unsigned char src_mac[6] = {0x00,0x07,0x32,0x3f,0xe2,0x23};//发送者网卡地址00:0c:29:97:c7:c1 0x00,0x07,0x32,0x3f,0xe2,0x23
-	unsigned char dst_mac[6] = {0xb8,0xae,0xed,0x23,0x8e,0x96};//接收者网卡地址‎b8:ae:ed:23:3a:f0 0xb8,0xae,0xed,0x23,0x3c,0xe3
+	libnet_t *lib_net_2 = NULL;
+	libnet_ptag_t lib_t0_2 = 0;
+	libnet_ptag_t lib_t1_2 = 0;
+	libnet_ptag_t lib_t2_2 = 0;
+	libnet_ptag_t lib_t3_2 = 0;
+
+	libnet_t *lib_net_3 = NULL;
+	libnet_ptag_t lib_t0_3 = 0;
+	libnet_ptag_t lib_t1_3 = 0;
+	libnet_ptag_t lib_t2_3 = 0;
+	libnet_ptag_t lib_t3_3 = 0;
+	unsigned char src_mac[6] = {0x00,0xe0,0x4c,0x1b,0x0b,0x39};
+	unsigned char dst_mac[6] = {0xc8,0x3a,0x35,0xd4,0x08,0x37};//接收者网卡地址‎b8:ae:ed:23:3a:f0 0xb8,0xae,0xed,0x23,0x3c,0xe3
+	unsigned char tcp_op_ack[] = {0x01,0x01,0x08,0x0a,0x02,0x14,0xbc,0xbd,0x02,0x14,0xbc,0xbd};
 	lib_net = libnet_init(LIBNET_LINK_ADV, argv[1], errBuf);	//初始化
-	//因为要根据IP包长度分开处理 需要新建两个
 	if(NULL == lib_net)
 	{
 		perror("libnet_init");
 		exit(-1);
 	}
-	lib_net_1 = libnet_init(LIBNET_LINK_ADV, argv[1], errBuf);	//初始化
-	if(NULL == lib_net_1)
+	lib_net_2 = libnet_init(LIBNET_LINK_ADV, argv[1], errBuf);	//初始化
+	if(NULL == lib_net_2)
+	{
+		perror("libnet_init");
+		exit(-1);
+	}
+	lib_net_3 = libnet_init(LIBNET_LINK_ADV, argv[1], errBuf);	//初始化
+	if(NULL == lib_net_3)
 	{
 		perror("libnet_init");
 		exit(-1);
 	}
 	unsigned char buffer[5000];
-	unsigned char buffer1[1480];
-	unsigned char buffer2[1480];
 	struct sockaddr_in addr;
 	socklen_t addr_len =sizeof(struct sockaddr_in);
 	int len=0;
-	while(1)
-	{
+	while(1){
 		bzero(buffer,sizeof(buffer));
 		len = recvfrom(sockfd2,buffer,sizeof(buffer), 0 , (struct sockaddr *)&addr ,&addr_len);
 		printf("receive %s: len:%d\n",sock_ntop((struct sockaddr *)&addr,addr_len),len);
-		
-		struct sniff_ip *ip;//ip包头
-		struct sniff_udp *udp;//udp包头
-		u_char *payload;//负载数据
-		int payload_size;//负载数据大小
-
-		ip=(struct sniff_ip*)(buffer);//IP 				
-		udp=(struct sniff_udp*)(buffer+sizeof(struct sniff_ip));//udp
-		payload=(u_char *)(buffer+sizeof(struct sniff_ip)+sizeof(struct sniff_udp));//payload
-		payload_size=ntohs(ip->ip_len)-20-8;//payloadsize
-
+		struct sniff_ip *ip;
+		ip=(struct sniff_ip*)(buffer);
 		printf("ip-len:%d\n",ntohs(ip->ip_len));
 		printf("ip-id:%x,ip-off:%x\n",ntohs(ip->ip_id),ntohs(ip->ip_off));
 		printf("protocol:%d\n",ip->ip_p);
-		printf("1\n");
-		//可能会收到一个大于1500字节超过MTU的IP包，需要分片
-		if(ntohs(ip->ip_len)<=1500)
-		{
-			printf("2-zhengchang\n");
+		if(ip->ip_p == 6){
+			struct sniff_tcp *tcp;
+			u_char *payload;//数据包负载的数据
+  			int payload_size;//数据包负载的数据大小
+			tcp=(struct sniff_tcp*)(buffer +sizeof(struct sniff_ip));
+			printf("flags:%d\n",tcp->th_flags);
+			//如果是SYN包，直传
+			if(tcp->th_flags == TH_SYN){
+				printf("This is SYN,nothing to do.\n");
+				u_char *ip_0;
+				ip_0=(u_char *)(buffer);
+				lib_t0_3 = libnet_build_ethernet(	//构造以太网数据包
+					(u_int8_t *)dst_mac,
+					(u_int8_t *)src_mac,
+					0x800, // 或者，ETHERTYPE_IP
+					ip_0,//ip
+					ntohs(ip->ip_len),//ip-len
+					lib_net_3,
+					lib_t0_3
+				);
+				int res = 0;
+				res = libnet_write(lib_net_3);	//发送数据包
+				memset(buffer,0,sizeof(buffer));
+				if(-1 == res)
+				{
+					perror("libnet_3_write");
+					exit(-1);
+				}	
+			}
+			else {
+				//需要更改ack序列号
+				printf("This is DATA.\n");
+				payload=(u_char *)(buffer+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp)+12);
+				printf("payload:%s\n",payload);
+				//从外部读入当前应有的seq
+				FILE *fp = NULL;
+				char buff[255];
+				fp = fopen("seq.txt", "r");
+				fscanf(fp, "%s", buff);
+				u_int host_seq = atoi(buff);
+				printf("%02x\n",host_seq);
+				fclose(fp);
+				payload_size=ntohs(ip->ip_len)-20-20-12;
+				printf("payload_size:%d\n",payload_size);
+				lib_t0 = libnet_build_tcp_options(  
+						tcp_op_ack,  
+						12,  
+						lib_net,
+						lib_t0
+				); 
+				lib_t1 = libnet_build_tcp(	//构造tcp数据包
+										ntohs(tcp->th_sport),
+										ntohs(tcp->th_dport),
+										ntohl(tcp->th_seq),//seq
+										host_seq,//ack
+										tcp->th_flags,//flags
+										tcp->th_win,//win
+			                    	0,//checksum
+										0x0,//urp
+			                    	32,//length
+										payload,//payload
+										payload_size,//payload_size
+										lib_net,
+										lib_t1
+				);
+				lib_t2 = libnet_build_ipv4(	//构造ip数据包
+											20+20+12+payload_size,
+											ip->ip_tos,
+											ntohs(ip->ip_id),
+											ntohs(ip->ip_off),
+											ip->ip_ttl,
+											ip->ip_p,
+											0,
+											*(u_int32_t *)&ip->ip_src,
+											*(u_int32_t *)&ip->ip_dst,
+											NULL,
+											0,
+											lib_net,
+											lib_t2
+				);
+				lib_t3 = libnet_build_ethernet(	//构造以太网数据包
+												(u_int8_t *)dst_mac,
+												(u_int8_t *)src_mac,
+												0x800, // 或者，ETHERTYPE_IP
+												NULL,
+												0,
+												lib_net,
+												lib_t3
+				);
+				int res = 0;
+				res = libnet_write(lib_net);	//发送数据包
+				if(-1 == res)
+				{
+					perror("libnet_write");
+					exit(-1);
+				}
+			}
+
+		} else {
+			//非TCP包直传
 			u_char *ip_1;
 			ip_1=(u_char *)(buffer);
-			lib_t1 = libnet_build_ethernet(	//构造以太网数据包
-											(u_int8_t *)dst_mac,
-											(u_int8_t *)src_mac,
-											0x800, // 或者，ETHERTYPE_IP
-											ip_1,//ip
-											ntohs(ip->ip_len),//ip-len
-											lib_net,
-											lib_t1
-										);
+			lib_t0_2 = libnet_build_ethernet(	//构造以太网数据包
+				(u_int8_t *)dst_mac,
+				(u_int8_t *)src_mac,
+				0x800, // 或者，ETHERTYPE_IP
+				ip_1,//ip
+				ntohs(ip->ip_len),//ip-len
+				lib_net_2,
+				lib_t0_2
+			);
 			int res = 0;
-			res = libnet_write(lib_net);	//发送数据包
+			res = libnet_write(lib_net_2);	//发送数据包
 			memset(buffer,0,sizeof(buffer));
 			if(-1 == res)
 			{
-				perror("libnet_write");
+				perror("libnet_2_write");
 				exit(-1);
-			}
+			}		
 		}
-        else 
-		{
-			//根据IP协议规则来进行分片
-			printf("3-dayu mtu\n");
-			printf("ip-len:%d\n",ntohs(ip->ip_len));
-			int count=(ntohs(ip->ip_len)-20)/1480+1;
-			printf("count=%d\n",count);
-			unsigned short offset=0x0000;
-			int i=0;
-			int last=0;
-			for( i=0;i<count;i++)
-			{
-				printf("i=%d\n",i);
-				int leftsize;
-				leftsize=ntohs(ip->ip_len)-1480*i-20;
-				//printf("size:%d\n",size);
-				if(leftsize<=1480) 
-					last=1;
-				printf("leftsize:%d\n",leftsize);
-				printf("last:%d\n",last);
-				if(last==0) {
-					memcpy(buffer1,buffer+20+1480*i,1480);
-					u_char *tp;
-					tp=(u_char *)(buffer1);
-					printf("4-bushizuihou\n");
-					offset=0x00b9*i|0x2000;
-					printf("offset:%x\n",offset);
-					lib_t1_1 = libnet_build_ipv4(	//构造ip数据包
-										1500,
-										ip->ip_tos,
-										ntohs(ip->ip_id),
-										offset,
-										ip->ip_ttl,
-										ip->ip_p,
-										0,
-										*(u_int32_t *)&ip->ip_src,
-										*(u_int32_t *)&ip->ip_dst,
-										tp,
-										1480,
-										lib_net_1,
-										lib_t1_1
-									);
-					lib_t2_1 = libnet_build_ethernet(	//构造以太网数据包
-											(u_int8_t *)dst_mac,
-											(u_int8_t *)src_mac,
-											0x800, // 或者，ETHERTYPE_IP
-											NULL,
-											0,
-											lib_net_1,
-											lib_t2_1
-										);
-					int res1 = 0;
-					res1 = libnet_write(lib_net_1);	//发送数据包
-					memset(buffer1,0,sizeof(buffer1));
-				}
-				else 
-				{
-					printf("5-shizuihou\n");
-					printf("leftsize:%d\n",leftsize);
-					memcpy(buffer1,buffer+20+1480*i,leftsize);
-					u_char *tp;
-					tp=(u_char *)(buffer1);
-					offset=0x00b9*i|0x0000;
-					printf("offset:%x\n",offset);
-					lib_t1_1 = libnet_build_ipv4(	//构造ip数据包
-										leftsize+20,
-										ip->ip_tos,
-										ntohs(ip->ip_id),
-										offset,
-										ip->ip_ttl,
-										ip->ip_p,
-										0,
-										*(u_int32_t *)&ip->ip_src,
-										*(u_int32_t *)&ip->ip_dst,
-										tp,
-										leftsize,
-										lib_net_1,
-										lib_t1_1
-									);
-
-					lib_t2_1 = libnet_build_ethernet(	//构造以太网数据包
-											(u_int8_t *)dst_mac,
-											(u_int8_t *)src_mac,
-											0x800, // 或者，ETHERTYPE_IP
-											NULL,
-											0,
-											lib_net_1,
-											lib_t2_1
-										);
-					int res1 = 0;
-					res1 = libnet_write(lib_net_1);	//发送数据包
-					memset(buffer1,0,sizeof(buffer1));
-					memset(buffer,0,sizeof(buffer));	
-					bzero(buffer,sizeof(buffer));	
-					printf("clean\n");	
-				}
-			}				
-	   }
-	}
-	libnet_destroy(lib_net);	//销毁资源
-	libnet_destroy(lib_net_1);	//销毁资源
+	}	
+	libnet_destroy(lib_net);	//销毁资源	
+	libnet_destroy(lib_net_2);	//销毁资源		
 	printf("----ok-----\n");
 	return 0;
  }
+
