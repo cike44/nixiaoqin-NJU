@@ -9,6 +9,7 @@
 #include <unistd.h>
 int sockfd4=0;
 struct sockaddr_in servaddr4;
+int id_host = 0;
 socklen_t addr_len =sizeof(struct sockaddr_in);
 /*以太网头*/
 struct sniff_ethernet
@@ -35,8 +36,8 @@ struct sniff_ip
   struct in_addr ip_src,ip_dst;
 };
 /* TCP header */  
-typedef u_int tcp_seq;   
-tcp_seq host_seq = 0;
+typedef u_int tcp_seq;
+tcp_seq host_seq = 0;   
 struct sniff_tcp {  
 	u_short th_sport;               /* source port */  
 	u_short th_dport;               /* destination port */  
@@ -66,7 +67,34 @@ struct sniff_udp
   u_short udp_len;
   u_short udp_sum;
 };
-
+void fetchTcpOp(unsigned char* dst, unsigned char* src, int len) {
+	int start = 0;
+	if(len == 12) {
+		start = 4;
+	} else {
+		start = 8;
+	}
+	memcpy(dst,src,len); 
+	FILE *fp1 = NULL;
+	unsigned char jiffies[4];
+	fp1 = fopen("/proc/jiffies", "r");
+	fscanf(fp1,"%s",jiffies);
+	printf("jiffies-zifuchuan:%s\n", jiffies);
+	u_int timestamp = atoi(jiffies);
+    printf("timestamp:%08x\n", timestamp);
+    unsigned char temp[8];
+	sprintf(temp,"%08x",timestamp);
+    int i,j = 0;
+	for(i=0; i<8; i+=2)
+	{
+		unsigned char temp2[] = {"0x"};
+        strncpy(temp2+2,temp+i,2);
+		dst[start+j+4] = dst[start+j];
+		dst[start+j] = strtoul(temp2,NULL,16);
+        j++;
+	}
+	fclose(fp1);	
+}
 void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * packet)
 {
   int * id = (int *)arg;
@@ -74,17 +102,6 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
   printf("Packet length: %d\n", pkthdr->len);
   printf("Number of bytes: %d\n", pkthdr->caplen);
   printf("Recieved time: %s", ctime((const time_t *)&pkthdr->ts.tv_sec)); 
-  int i;
-  for(i=0; i<pkthdr->len; ++i)
-  {
-    printf("%02x", packet[i]);
-    if( (i + 1) % 16 == 0 )
-    {
-      printf("\n");
-    }
-  }
-  printf("\n");
-
   struct sniff_ethernet *ethernet;
   struct sniff_ip *ip;//ip包头
   struct sniff_udp *udp;//udp包头
@@ -129,9 +146,8 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 	libnet_ptag_t lib_t2_4 = 0;
 	libnet_ptag_t lib_t3_4 = 0;
 	//因为要把IP包封在以太帧中发出去 需要知道发送和接收网卡mac地址
-	unsigned char src_mac[6] = {0x00,0xe0,0x4c,0x1b,0x0b,0x39};
+	unsigned char src_mac[6] = {0x00,0xe0,0x4c,0x1a,0x02,0x3b};
 	unsigned char dst_mac[6] = {0xc8,0x3a,0x35,0xd4,0x08,0x37};
-	unsigned char tcp_op_ack[] = {0x01,0x01,0x08,0x0a,0x02,0x14,0xbc,0xbd,0x02,0x14,0xbc,0xbd};
 	//初始化
 	lib_net = libnet_init(LIBNET_LINK_ADV, "eth0", errBuf);	
 	lib_net_2 = libnet_init(LIBNET_LINK_ADV, "eth0", errBuf);	
@@ -160,10 +176,13 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 	  printf("flags:%d\n",tcp->th_flags);
 	  switch(tcp->th_flags) {
 		  case TH_SYN: {
-		  	printf("This is SYN\n");
-			//payload is tcp_op at this time			
+		  	printf("This is SYN.\n");
+			//payload is tcp_op（len = 20） at this time。回SYN+ACK包
+			unsigned char tcp_op_syn_and_ack[20];
+			//rewrite timestamp
+			fetchTcpOp(tcp_op_syn_and_ack,payload,20);			
 			lib_t0 = libnet_build_tcp_options(  
-				        payload,  
+				        tcp_op_syn_and_ack,  
 				        20,  
 						lib_net,
 						lib_t0
@@ -171,13 +190,13 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 			lib_t1 = libnet_build_tcp(	//构造tcp数据包
 									ntohs(tcp->th_dport),
 									ntohs(tcp->th_sport),
-									0,//seq
-									ntohl(tcp->th_seq)+0x1,//ack
+									0,//本机seq，暂设从0开始，只回ack，到1够用了
+									ntohl(tcp->th_seq)+0x1,//ack发包的seq+1
 									TH_SYN | TH_ACK,//flags
-									tcp->th_win,//win
-                                    0,//checksum
+									ntohs(tcp->th_win),//win
+	                                0,//checksum
 									0x0,//urp
-                                    40,//length
+	                                40,//length
 									NULL,//payload
 									0,//payload_size
 									lib_net,
@@ -217,11 +236,18 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 			break;
 		  }	  
 		  case TH_PUSH | TH_ACK: {
-		  	printf("This is DTAT\n");
-			payload_size=ntohs(ip->ip_len)-20-20-12;
-			printf("payload_size:%d\n",payload_size);
+		  	printf("This is DTAT.\n");
+		  	//payload=tcp_op+data
+		  	payload_size=ntohs(ip->ip_len)-20-20-12;
+			printf("data_size:%d\n",payload_size);
+		  	//回ack包就好
+		  	unsigned char tcp_op_data[12];
+		  	memcpy(tcp_op_data, payload, 12);
+			unsigned char tcp_op_data_ack[12];
+			//rewrite timestamp
+			fetchTcpOp(tcp_op_data_ack,tcp_op_data,12);
 			lib_t0_2 = libnet_build_tcp_options(  
-				        tcp_op_ack,  
+				        tcp_op_data_ack,  
 				        12,  
 						lib_net_2,
 						lib_t0_2
@@ -232,10 +258,10 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 									0x1,//seq
 									ntohl(tcp->th_seq)+payload_size,//ack
 									TH_ACK,//flags
-									tcp->th_win,//win
-                                    0,//checksum
+									ntohs(tcp->th_win),//win
+	                                0,//checksum
 									0x0,//urp
-                                    32,//length
+	                                32,//length
 									NULL,//payload
 									0,//payload_size
 									lib_net_2,
@@ -276,30 +302,24 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 		  }
 		  case TH_FIN | TH_ACK: {
 		  	printf("This is FIN.\n");
-		  	//回ACK包 待合并
-			lib_t0_3 = libnet_build_tcp_options(  
-				        tcp_op_ack,  
-				        12,  
-						lib_net_3,
-						lib_t0_3
-			); 
-			lib_t1_3 = libnet_build_tcp(	//构造tcp数据包
+		  	//reply FIN
+			lib_t0_3 = libnet_build_tcp(	//构造tcp数据包
 									ntohs(tcp->th_dport),
 									ntohs(tcp->th_sport),
 									ntohl(tcp->th_ack),//seq
-									ntohl(tcp->th_seq)+0x1,//ack
-									TH_ACK,//flags
-									tcp->th_win,//win
-                                    0,//checksum
+									0x0,//ack
+									TH_RST,//flags
+									ntohs(tcp->th_win),//win
+                					0,//checksum
 									0x0,//urp
-                                    32,//length
+                					20,//length
 									NULL,//payload
 									0,//payload_size
 									lib_net_3,
-									lib_t1_3
+									lib_t0_3
 			);
-			lib_t2_3 = libnet_build_ipv4(	//构造ip数据包
-										20+20+12,
+			lib_t1_3 = libnet_build_ipv4(	//构造ip数据包
+										20+20,
 										ip->ip_tos,
 										id_host++,
 										ntohs(ip->ip_off),
@@ -311,16 +331,16 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 										NULL,
 										0,
 										lib_net_3,
-										lib_t2_3
+										lib_t1_3
 			);
-			lib_t3_3 = libnet_build_ethernet(	//构造以太网数据包
+			lib_t2_3 = libnet_build_ethernet(	//构造以太网数据包
 											(u_int8_t *)dst_mac,
 											(u_int8_t *)src_mac,
 											0x800, // 或者，ETHERTYPE_IP
 											NULL,
 											0,
 											lib_net_3,
-											lib_t3_3
+											lib_t2_3
 			);
 			int res = 0;
 			res = libnet_write(lib_net_3);	//发送数据包
@@ -332,8 +352,9 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 			break;
 		  }
 		  case TH_SYN | TH_ACK: {
-		  	printf("This is SYN + ACK\n");
-		  	//回ACK包，同时记下对方的seq
+		  	printf("This is SYN + ACK");
+
+			//reply ack 同时记下对方的seq和时间戳
 			host_seq = ntohl(tcp->th_seq)+0x1;
 			FILE *fp = NULL;
 			fp = fopen("seq.txt", "w");
@@ -341,8 +362,23 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 			sprintf(buf,"%d",host_seq);
 			fprintf(fp, buf);
 			fclose(fp);
+
+			FILE *fp1 = NULL;
+			fp1 = fopen("timestamp.txt", "w");
+			printf("remember timestamp:\n");
+			int i = 0;
+			for(i=0;i<4;++i){
+				printf("%02x",payload[i+4]);
+				fputc(payload[i+8],fp1);
+			}
+			printf("\n");
+			fclose(fp1);
+			//payload=tcp_op len=20 diandao
+			unsigned char tcp_op_syn_ack[]={0x01,0x01,0x08,0x0a};
+			memcpy(tcp_op_syn_ack+4,payload+8+4,4);
+			memcpy(tcp_op_syn_ack+8,payload+8,4);
 			lib_t0_4 = libnet_build_tcp_options(  
-				        tcp_op_ack,  
+				        tcp_op_syn_ack,  
 				        12,  
 						lib_net_4,
 						lib_t0_4
@@ -353,7 +389,7 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 									ntohl(tcp->th_ack),//seq
 									ntohl(tcp->th_seq)+0x1,//ack
 									TH_ACK,//flags
-									tcp->th_win,//win
+									ntohs(tcp->th_win),//win
                                     0,//checksum
 									0x0,//urp
                                     32,//length
@@ -394,19 +430,33 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 				exit(-1);
 			}
 			canBeSent = 0;
-			break;			
+			break;					
 		  }	
 		  case TH_ACK: {
-			printf("This is ACK");
+		  	//同样冲突
+			printf("This is ACK.\n");
+			//不传ACK包
 			canBeSent = 0;
-			break;
-			
+			//记下对方时间戳 payload=tcp_op len=12
+			FILE *fp2 = NULL;
+			fp2 = fopen("timestamp.txt", "w");
+			printf("remember timestamp:\n");
+			int i = 0;
+			for(i=0;i<4;++i){
+				printf("%02x",payload[i+4]);
+				fputc(payload[i+4],fp2);
+			}
+			printf("\n");
+			fclose(fp2);
+			break;			
 		  }
 		  default: {
 			printf("This is ELSE.\n");
 			printf("flags:%d\n",tcp->th_flags);
+			canBeSent = 0;
+			break;
 		  }
-  	  }
+	  }
 	  if(canBeSent) {
 		  sendto(sockfd4,ip,ntohs(ip->ip_len),0,(struct sockaddr *)&servaddr4,addr_len);
 	  }	  	
@@ -442,3 +492,4 @@ int main(int argc ,char* argv[])
   
   return 0;
 }
+

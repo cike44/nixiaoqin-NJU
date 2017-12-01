@@ -90,6 +90,49 @@ void convertStrToUnChar(char* str, unsigned char* UnChar)
     }  
     return;  
 } 
+void changeTimestamp(unsigned char* tcp, int len) { 
+
+	FILE *fp1 = NULL;
+	unsigned char jiffies[4];
+	fp1 = fopen("/proc/jiffies", "r");
+	fscanf(fp1,"%s",jiffies);
+	printf("jiffies-zifuchuan:%s\n", jiffies);
+	u_int timestamp = atoi(jiffies);
+    printf("timestamp:%08x\n", timestamp);
+    unsigned char temp[8];
+	sprintf(temp,"%08x",timestamp);
+
+	FILE *fp2 = NULL;
+	unsigned char jiffies_remote[4];
+	fp1 = fopen("jiffies.txt", "r");
+	fscanf(fp1,"%s",jiffies_remote);
+	printf("jiffies_remote-zifuchuan:%s\n", jiffies_remote);
+	u_int timestamp_remote = atoi(jiffies_remote);
+    printf("timestamp_remote:%08x\n", timestamp_remote);
+    unsigned char temp2[8];
+	sprintf(temp2,"%08x",timestamp_remote);
+
+	int start = 0;
+	if(len == 12) {
+		start = 22;
+	} else {
+		start = 28;
+	}
+	
+    int i,j = 0;
+	for(i=0; i<8; i+=2)
+	{
+		unsigned char temp3[] = {"0x"};
+        strncpy(temp3+2,temp+i,2);
+		tcp[start+j] = strtoul(temp3,NULL,16);
+		if(len == 12) {
+	        strncpy(temp3+2,temp2+i,2);	
+			tcp[start+j+4] = strtoul(temp3,NULL,16);
+		}
+        j++;
+	}
+	fclose(fp1);	
+}
 int main(int argc, char *argv[])
 {
 	int sockfd2=0;
@@ -119,9 +162,8 @@ int main(int argc, char *argv[])
 	libnet_ptag_t lib_t1_3 = 0;
 	libnet_ptag_t lib_t2_3 = 0;
 	libnet_ptag_t lib_t3_3 = 0;
-	unsigned char src_mac[6] = {0x00,0xe0,0x4c,0x1b,0x0b,0x39};
-	unsigned char dst_mac[6] = {0xc8,0x3a,0x35,0xd4,0x08,0x37};//接收者网卡地址‎b8:ae:ed:23:3a:f0 0xb8,0xae,0xed,0x23,0x3c,0xe3
-	unsigned char tcp_op_ack[] = {0x01,0x01,0x08,0x0a,0x02,0x14,0xbc,0xbd,0x02,0x14,0xbc,0xbd};
+	unsigned char src_mac[6] = {0x00,0xe0,0x4c,0x1a,0x02,0x3b};
+	unsigned char dst_mac[6] = {0xc8,0x3a,0x35,0xd4,0x08,0x37};//00:e0:4c:1a:02:3b
 	lib_net = libnet_init(LIBNET_LINK_ADV, argv[1], errBuf);	//初始化
 	if(NULL == lib_net)
 	{
@@ -158,8 +200,9 @@ int main(int argc, char *argv[])
 			u_char *payload;//数据包负载的数据
   			int payload_size;//数据包负载的数据大小
 			tcp=(struct sniff_tcp*)(buffer +sizeof(struct sniff_ip));
+
 			printf("flags:%d\n",tcp->th_flags);
-			//如果是SYN包，直传
+			//如果是SYN包，不变
 			if(tcp->th_flags == TH_SYN){
 				printf("This is SYN,nothing to do.\n");
 				u_char *ip_0;
@@ -183,22 +226,47 @@ int main(int argc, char *argv[])
 				}	
 			}
 			else {
-				//需要更改ack序列号
-				printf("This is DATA.\n");
+				if(tcp->th_flags == TH_PUSH | TH_ACK){
+					//数据包需要更改ack序列号,更改对端时间戳
+					printf("This is DATA.\n");
+				}else if(tcp->th_flags == TH_FIN | TH_ACK) {
+					printf("This is FIN.\n");
+				}else {
+					printf("This is ELSE.\n");
+				}
 				payload=(u_char *)(buffer+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp)+12);
 				printf("payload:%s\n",payload);
+				payload_size=ntohs(ip->ip_len)-20-20-12;
+				printf("payload_size:%d\n",payload_size);
 				//从外部读入当前应有的seq
 				FILE *fp = NULL;
 				char buff[255];
 				fp = fopen("seq.txt", "r");
 				fscanf(fp, "%s", buff);
 				u_int host_seq = atoi(buff);
+				printf("host_seq:\n");
 				printf("%02x\n",host_seq);
 				fclose(fp);
-				payload_size=ntohs(ip->ip_len)-20-20-12;
-				printf("payload_size:%d\n",payload_size);
+				//从外部读入对端时间戳
+				unsigned char tcp_op_data[12];
+				u_char *tcp_op;//数据包负载的数据
+				tcp_op=(u_char *)(buffer+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp));
+				memcpy(tcp_op_data,tcp_op,12);
+				FILE *fp1 = NULL;
+				fp1 = fopen("timestamp.txt", "r");
+				unsigned char temp[5];
+				fgets(temp, 5, fp1);
+				printf("timestamp:\n");
+				int i = 0;
+				for(i=0;i<4;++i){
+					printf("%02x",temp[i]);
+					tcp_op_data[8+i]=temp[i];
+				}
+				printf("\n");
+				fclose(fp1);
+
 				lib_t0 = libnet_build_tcp_options(  
-						tcp_op_ack,  
+						tcp_op_data,  
 						12,  
 						lib_net,
 						lib_t0
@@ -209,10 +277,10 @@ int main(int argc, char *argv[])
 										ntohl(tcp->th_seq),//seq
 										host_seq,//ack
 										tcp->th_flags,//flags
-										tcp->th_win,//win
-			                    	0,//checksum
+										ntohs(tcp->th_win),//win
+			                    		0,//checksum
 										0x0,//urp
-			                    	32,//length
+			                    		32,//length
 										payload,//payload
 										payload_size,//payload_size
 										lib_net,
