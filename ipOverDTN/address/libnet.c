@@ -222,16 +222,20 @@ int main(int argc, char *argv[])
 		perror("libnet_init");
 		exit(-1);
 	}
-	unsigned char buffer[5000];
+	char buffer[5000];
+	unsigned char bufferUnchar[5000];
 	struct sockaddr_in addr;
 	socklen_t addr_len =sizeof(struct sockaddr_in);
 	int len=0;
 	while(1){
 		bzero(buffer,sizeof(buffer));
+		bzero(bufferUnchar,sizeof(bufferUnchar));
 		len = recvfrom(sockfd2,buffer,sizeof(buffer), 0 , (struct sockaddr *)&addr ,&addr_len);
 		printf("receive %s: len:%d\n",sock_ntop((struct sockaddr *)&addr,addr_len),len);
+		convertStrToUnChar(buffer, bufferUnchar);
+		
 		struct sniff_ip *ip;
-		ip=(struct sniff_ip*)(buffer);
+		ip=(struct sniff_ip*)(bufferUnchar);
 		printf("ip-len:%d\n",ntohs(ip->ip_len));
 		printf("ip-id:%x,ip-off:%x\n",ntohs(ip->ip_id),ntohs(ip->ip_off));
 		printf("protocol:%d\n",ip->ip_p);
@@ -241,8 +245,8 @@ int main(int argc, char *argv[])
 			u_char *tcp_op_and_data;
 			u_char *payload;//数据包负载的数据
   			int payload_size;//数据包负载的数据大小
-			tcp=(struct sniff_tcp*)(buffer +sizeof(struct sniff_ip));
-			tcp_op_and_data=(u_char *)(buffer+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp));
+			tcp=(struct sniff_tcp*)(bufferUnchar +sizeof(struct sniff_ip));
+			tcp_op_and_data=(u_char *)(bufferUnchar+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp));
 			printf("flags:%d\n",tcp->th_flags);
 			if(tcp->th_flags == TH_SYN){
 				printf("This is SYN.\n");
@@ -298,7 +302,7 @@ int main(int argc, char *argv[])
 				);
 				int res = 0;
 				res = libnet_write(lib_net_1);	//发送数据包
-				memset(buffer,0,sizeof(buffer));
+				memset(bufferUnchar,0,sizeof(bufferUnchar));
 				if(-1 == res)
 				{
 					perror("libnet_1_write");
@@ -316,7 +320,7 @@ int main(int argc, char *argv[])
 				}
 				unsigned char tcp_op_data[12];
 				memcpy(tcp_op_data,tcp_op_and_data,12);
-				payload=(u_char *)(buffer+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp)+12);
+				payload=(u_char *)(bufferUnchar+sizeof(struct sniff_ip)+sizeof(struct sniff_tcp)+12);
 				printf("payload:%s\n",payload);
 				payload_size=ntohs(ip->ip_len)-20-20-12;
 				printf("payload_size:%d\n",payload_size);
@@ -389,7 +393,7 @@ int main(int argc, char *argv[])
 		} else {
 			//非TCP包直传
 			u_char *ip_1;
-			ip_1=(u_char *)(buffer);
+			ip_1=(u_char *)(bufferUnchar);
 			lib_t0_3 = libnet_build_ethernet(	//构造以太网数据包
 				(u_int8_t *)dst_mac,
 				(u_int8_t *)src_mac,
@@ -401,7 +405,7 @@ int main(int argc, char *argv[])
 			);
 			int res = 0;
 			res = libnet_write(lib_net_3);	//发送数据包
-			memset(buffer,0,sizeof(buffer));
+			memset(bufferUnchar,0,sizeof(bufferUnchar));
 			if(-1 == res)
 			{
 				perror("libnet_3_write");
