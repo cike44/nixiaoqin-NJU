@@ -16,43 +16,55 @@ static char                 *destEid = NULL;
 static char                 *ownEid = NULL;
 static BpCustodySwitch      custodySwitch = NoCustodyRequested;
 static int                  running = 1;
-
+int port = 9090;
 const char usage[] =
 "Usage: bpchat.c <source EID> <dest EID> [ct]\n\n"
 "Reads lines from stdin and sends these lines in bundles.\n"
 "Receives bundles and writes them to stdout.\n"
 "If \"ct\" is specified, sent bundles have the custody transfer flag set\n";
 
+void convertUnCharToStr(char* str, unsigned char* UnChar, int ucLen)  
+{  
+    int i = 0;  
+    for(i = 0; i < ucLen; i++)  
+    {  
+        //格式化输str,每unsigned char 转换字符占两位置%x写输%X写输  
+        sprintf(str + i * 2, "%02x", UnChar[i]);  
+    }  
+} 
 static pthread_t    sendLinesThread;
 static void *       sendLines(void *args)
 {
 	Object          bundleZco, bundlePayload;
 	Object          newBundle;   /* We never use but bp_send requires it. */
 	int             lineLength = 0;
-	char            lineBuffer[5000];
-
+	char   lineBuffer[5000];
+    unsigned char bufferUnchar[5000];
 	int sockfd_recv=0;
 	struct sockaddr_in servaddr_recv;
 	sockfd_recv=socket(AF_INET,SOCK_DGRAM,0);
 	bzero(&servaddr_recv,sizeof(servaddr_recv));
 	servaddr_recv.sin_family=AF_INET;
-	servaddr_recv.sin_port=htons(7089);
+	servaddr_recv.sin_port=htons(port);
 	//host ip address
-	inet_pton(AF_INET,"192.168.10.106",&servaddr_recv.sin_addr);
+	servaddr_recv.sin_addr.s_addr=htonl(INADDR_ANY) ;
+	//inet_pton(AF_INET,"127.0.0.1",&servaddr_recv.sin_addr);
 	bind(sockfd_recv, (struct sockaddr *)&servaddr_recv, sizeof(servaddr_recv));
-	//servaddr_recv.sin_addr.s_addr=htonl(INADDR_ANY) ;
 	struct sockaddr_in addr;
 	socklen_t addr_len =sizeof(struct sockaddr_in);
+	int n = 0;
 	while(running) {
 		/* Read from socket */
 		bzero(lineBuffer,sizeof(lineBuffer));
-		int n = recvfrom(sockfd_recv, lineBuffer, sizeof(lineBuffer), 0 , (struct sockaddr *)&addr ,&addr_len);
+		bzero(bufferUnchar,sizeof(bufferUnchar));
+		n = recvfrom(sockfd_recv, bufferUnchar, sizeof(bufferUnchar), 0 , (struct sockaddr *)&addr ,&addr_len);
 
 		printf("length = %d, data-send:\n", n);
 		int i = 0;
 		for(i = 0; i < n; ++i) {
-			printf("%02x", lineBuffer[i]);
+			printf("%02x", bufferUnchar[i]);
 		}
+		//printf("%s",lineBuffer);
 		printf("\n");
 		//printf("%s\n", lineBuffer);
 		/* Read a line from stdin */
@@ -62,7 +74,7 @@ static void *       sendLines(void *args)
 		// 	bp_interrupt(sap);
 		// 	break;
 		// }
-
+		convertUnCharToStr(lineBuffer,bufferUnchar,n);
 		lineLength = strlen(lineBuffer);
 
 		/* Wrap the linebuffer in a bundle payload. */
@@ -112,7 +124,7 @@ static void *       recvBundles(void *args)
 {
 	BpDelivery      dlv;
 	ZcoReader       reader;
-	char            buffer[5000];
+	char   buffer[50000];
 	int             bundleLenRemaining;
 	int             rc;
 	int             bytesToRead;
@@ -123,10 +135,11 @@ static void *       recvBundles(void *args)
 	servaddr_send.sin_family=AF_INET;
 	servaddr_send.sin_port=htons(7089);
 	//zhukong ip address
-	inet_pton(AF_INET,"192.168.10.105",&servaddr_send.sin_addr);
+	inet_pton(AF_INET,"127.0.0.1",&servaddr_send.sin_addr);
 	socklen_t addr_len =sizeof(struct sockaddr_in);
 	while(running)
 	{
+		bzero(buffer,sizeof(buffer));
 		if(bp_receive(sap, &dlv, BP_BLOCKING) < 0)
 		{
 			putErrmsg("bpchat bundle reception failed.", NULL);
@@ -192,9 +205,10 @@ void handleQuit(int sig)
 
 int main(int argc, char **argv)
 {
-	ownEid      = (argc > 1 ? argv[1] : NULL);
-	destEid     = (argc > 2 ? argv[2] : NULL);
-	char    *ctArg = (argc > 3 ? argv[3] : NULL);
+	destEid      = (argc > 1 ? argv[1] : NULL);
+	ownEid     = (argc > 2 ? argv[2] : NULL);
+	port        = (argc > 3 ? atoi(argv[3]) : 9090);
+	char    *ctArg = (argc > 4 ? argv[4] : NULL);
 
 	if(argc < 2 || (argv[1][0] == '-')) {
 		fprintf(stderr, usage);

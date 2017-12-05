@@ -7,11 +7,8 @@
 #include <libnet.h>
 #include <string.h>
 #include <unistd.h>
-
-int sockfd4=0;
-struct sockaddr_in servaddr4;
-socklen_t addr_len =sizeof(struct sockaddr_in);
-int id_host = 0;
+#include <netinet/in.h>
+#include <mysql/mysql.h>
 /*以太网头*/
 struct sniff_ethernet
 {
@@ -69,6 +66,88 @@ struct sniff_udp
 	u_short udp_len;
 	u_short udp_sum;
 };
+int fetchPort(char* ip) {
+	MYSQL *conn;
+	MYSQL_RES *res;
+	MYSQL_ROW row;
+	char server[] = "localhost";
+	char user[] = "root";
+	char password[] = "qwas";
+	char database[] = "ip_to_ipn";
+	char port[4];
+	conn = mysql_init(NULL);
+	if (!mysql_real_connect(conn, server,user, password, database, 0, NULL, 0)) 
+	{
+		fprintf(stderr, "%s\n", mysql_error(conn));
+		exit(1);
+	}
+	char query_select[70]={"select * from ip_ipn_dst where ip_addr = '"};
+	strcat(query_select,ip);
+	strcat(query_select,"'");
+	printf("query_select: %s \n", query_select);
+	if (mysql_query(conn, query_select))
+	{
+		fprintf(stderr, "%s\n", mysql_error(conn));
+		exit(1);
+	}
+	res = mysql_use_result(conn);
+	row = mysql_fetch_row(res);
+	if(!strcmp(row[2],"off")) {
+		char cmd[100]={"gnome-terminal -x bash -c \"sudo bpchat "};
+		strcat(cmd,row[1]);
+		strcat(cmd," ");
+		mysql_free_result(res);
+		memset(query_select, 0, 70);
+		strcpy(query_select,"select * from ip_ipn_src where status = 'off' limit 1");
+		printf("query_select: %s \n", query_select);
+		if (mysql_query(conn, query_select))
+		{
+			fprintf(stderr, "%s\n", mysql_error(conn));
+			exit(1);
+		}
+		res = mysql_use_result(conn);
+		row = mysql_fetch_row(res);
+		strcat(cmd,row[0]);
+		strcat(cmd," ");
+		strcat(cmd,row[1]);
+		strcat(cmd,"; exec bash;\" &");
+		printf("cmd: %s \n", cmd);
+		system(cmd);
+		sleep(2);
+		strcpy(port, row[1]);
+		mysql_free_result(res);
+		memset(query_select, 0, 70);
+		strcpy(query_select,"update ip_ipn_dst set status = 'on',port = ");
+		strcat(query_select,port);
+		strcat(query_select," where ip_addr = '");
+		strcat(query_select,ip);
+		strcat(query_select,"'");
+		printf("query_select: %s \n", query_select);
+		if (mysql_query(conn, query_select))
+		{
+			fprintf(stderr, "%s\n", mysql_error(conn));
+			exit(1);
+		}
+		//mysql_free_result(res);
+		memset(query_select, 0, 70);
+		strcpy(query_select,"update ip_ipn_src set status = 'on' where port = ");
+		strcat(query_select,port);	
+		printf("query_select: %s \n", query_select);
+		if (mysql_query(conn, query_select))
+		{
+			fprintf(stderr, "%s\n", mysql_error(conn));
+			exit(1);
+		}
+		//mysql_free_result(res);
+	} else {
+		strcpy(port, row[3]);
+		mysql_free_result(res);
+	}
+
+	mysql_close(conn);
+	//printf("port:%s \n", port);
+	return atoi(port);
+}
 void fetchTcpOp(unsigned char* dst, unsigned char* src, int len) {
 	int start = 0;
 	if(len == 12) {
@@ -178,8 +257,27 @@ void getPacket(u_char * arg, const struct pcap_pkthdr * pkthdr, const u_char * p
 	//取出IP包
 	ip=(struct sniff_ip*)(packet + sizeof(struct sniff_ethernet));
 	printf("len:%d\n",ntohs(ip->ip_len));
-	printf("protocol:%d\n",ip->ip_p);
+	//fetch ip_addr to get port
+	struct in_addr addr2;
+	addr2 = ip->ip_dst;
+	char addr3[16];
+	inet_ntop(AF_INET,(void *)&addr2,addr3,16); 
+	printf("%s\n", addr3);
+	int port = fetchPort(addr3);
+	printf("port%d\n", port);
+	//过滤出来发到本地的udp 端口
+	int sockfd4=0;
+	struct sockaddr_in servaddr4;
+	socklen_t addr_len =sizeof(struct sockaddr_in);
+	int id_host = 0;
+	sockfd4=socket(AF_INET,SOCK_DGRAM,0);
+	bzero(&servaddr4,sizeof(servaddr4));
+	servaddr4.sin_family=AF_INET;
+	servaddr4.sin_port=htons(port);
+	inet_pton(AF_INET,"127.0.0.1",&servaddr4.sin_addr);
+
 	//is TCP?
+	printf("protocol:%d\n",ip->ip_p);
 	if(ip->ip_p == 6) {
 		tcp=(struct sniff_tcp*)(packet + sizeof(struct sniff_ethernet)+sizeof(struct sniff_ip));
 		printf("flags:%d\n",tcp->th_flags);
@@ -457,16 +555,9 @@ int main(int argc ,char* argv[])
 	/* construct a filter */
 	struct bpf_program filter;
 	//过滤规则设置
-	pcap_compile(device, &filter, "tcp and dst net 192.168.1.105 and not icmp", 1, 0);
-	//pcap_compile(device, &filter, "tcp and dst net 192.168.1.102 and not icmp", 1, 0);
+	pcap_compile(device, &filter, "dst host 192.168.235.136 or dst host 192.168.235.133", 1, 0);
 	pcap_setfilter(device, &filter);
-	//过滤出来发到本地的udp 9090端口
-	sockfd4=socket(AF_INET,SOCK_DGRAM,0);
-	bzero(&servaddr4,sizeof(servaddr4));
-	servaddr4.sin_family=AF_INET;
-	servaddr4.sin_port=htons(9090);
-	inet_pton(AF_INET,"192.168.10.111",&servaddr4.sin_addr);
-	//inet_pton(AF_INET,"192.168.10.115",&servaddr4.sin_addr);
+
 	/* wait loop forever */
 	int id = 0;
 	pcap_loop(device, -1, getPacket, (u_char*)&id);
